@@ -3,7 +3,7 @@ services:
   stefan-bot:
     build:
       context: .
-      dockerfile: Dockerfil
+      dockerfile: Dockerfile
     image: discord-stefan-bot:latest
     container_name: discord-stefan-bot
     restart: unless-stopped
