@@ -17,10 +17,10 @@ class PetScheduleManager:
                 return json.load(f)
         except FileNotFoundError:
             return {
-                "feed": {"date": None, "done": False, "message_id": None, "last_reminder_hour": None},
-                "filter": {"week": None, "done": False, "message_id": None, "assignee_index": 0, "last_reminder_date": None},
-                "tank": {"month": None, "done": False, "message_id": None, "assignee_index": 0, "last_reminder_date": None},
-                "vacation": {}  # user_id -> bool
+                "feed":   {"date": None, "done": False, "message_id": None, "last_reminder_hour": None},
+                "filter": {"week": None, "done": False, "message_id": None, "assignee_index": 0, "last_reminder_date": None, "reminder_step": 0},
+                "tank":   {"month": None, "done": False, "message_id": None, "assignee_index": 0, "last_reminder_date": None, "reminder_step": 0},
+                "vacation": {}
             }
         except Exception as e:
             logger.exception("Failed to load data file: %s", e)
@@ -49,10 +49,12 @@ class PetScheduleManager:
         self.data["filter"]["done"] = False
         self.data["filter"]["message_id"] = None
         self.data["filter"]["last_reminder_date"] = None
+        self.data["filter"]["reminder_step"] = 0
         self.save()
 
     def mark_filter_done(self):
         self.data["filter"]["done"] = True
+        self.data["filter"]["reminder_step"] = 0
         self.save()
 
     # --- Tank ---
@@ -61,10 +63,12 @@ class PetScheduleManager:
         self.data["tank"]["done"] = False
         self.data["tank"]["message_id"] = None
         self.data["tank"]["last_reminder_date"] = None
+        self.data["tank"]["reminder_step"] = 0
         self.save()
 
     def mark_tank_done(self):
         self.data["tank"]["done"] = True
+        self.data["tank"]["reminder_step"] = 0
         self.save()
 
     # --- Rotation & Vacation ---

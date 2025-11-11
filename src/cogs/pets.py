@@ -15,6 +15,10 @@ logger = logging.getLogger("stefan-bot")
 GREEN_CHECK = "✅"
 RED_X = "❌"
 
+FILTER_INTERVAL_DAYS = 2
+FILTER_MAX_STEPS = 3   # Wed, Fri, Sun (3 reminders per week)
+TANK_INTERVAL_DAYS = 7 # weekly reminders
+
 class PetsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -110,39 +114,72 @@ class PetsCog(commands.Cog):
             if not ch:
                 return
 
-            # Weekly (filter) - post every Monday at post_time, then daily reminders until done
+            # ----------------- Filter (weekly) -----------------
             post_time_str = self.config.get_post_time("filter_clean", "10:00")
             ph, pm = [int(x) for x in post_time_str.split(":")]
-            if now.weekday() == 0:  # Monday
-                week_str = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
-                if self.state.data["filter"].get("week") != week_str and now.time() >= time(ph, pm):
-                    # start week
+            post_t = time(ph, pm)
+
+            # Post a new assignment strictly on Monday at post_time
+            if now.weekday() == 0:
+                week = now.isocalendar().week
+                year = now.isocalendar().year
+                week_str = f"{year}-W{week:02d}"
+                if self.state.data["filter"].get("week") != week_str and now.time() >= post_t:
                     self.state.start_week(week_str)
                     await self._post_filter_assignment(ch)
-                # Daily reminder if not done
-                if not self.state.data["filter"]["done"]:
-                    last = self.state.data["filter"].get("last_reminder_date")
-                    if last != now.date().isoformat() and now.time() >= time(ph, pm):
+
+            # Reminders any day: Wed/Fri/Sun at the same post_time
+            filt = self.state.data["filter"]
+            if filt.get("week") and not filt.get("done"):
+                # derive Monday date of that ISO week
+                try:
+                    y_s, w_s = filt["week"].split("-W")
+                    y_i, w_i = int(y_s), int(w_s)
+                    monday_date = date.fromisocalendar(y_i, w_i, 1)
+                except Exception:
+                    monday_date = now.date()  # fallback
+
+                base_dt = self.tz.localize(datetime.combine(monday_date, post_t))
+                step = int(filt.get("reminder_step", 0))
+                if step < FILTER_MAX_STEPS:
+                    target_dt = base_dt + timedelta(days=FILTER_INTERVAL_DAYS * (step + 1))
+                    if now >= target_dt:
                         assignee = await self._current_filter_assignee_mention(ch.guild)
                         await ch.send(CSStrings.FILTER_REMINDER.format(assignee=assignee))
-                        self.state.data["filter"]["last_reminder_date"] = now.date().isoformat()
+                        self.state.data["filter"]["reminder_step"] = step + 1
                         self.state.save()
 
-            # Monthly (tank) - 1st of month at post_time, daily reminders until done
+            # ----------------- Tank (monthly) -----------------
             t_post_time_str = self.config.get_post_time("tank_clean", "10:00")
             th, tm = [int(x) for x in t_post_time_str.split(":")]
+            t_post_t = time(th, tm)
+
+            # Post a new assignment strictly on the 1st at post_time
             if now.day == 1:
                 month_str = now.strftime("%Y-%m")
-                if self.state.data["tank"].get("month") != month_str and now.time() >= time(th, tm):
+                if self.state.data["tank"].get("month") != month_str and now.time() >= t_post_t:
                     self.state.start_month(month_str)
                     await self._post_tank_assignment(ch)
-                if not self.state.data["tank"]["done"]:
-                    last = self.state.data["tank"].get("last_reminder_date")
-                    if last != now.date().isoformat() and now.time() >= time(th, tm):
-                        assignee = await self._current_tank_assignee_mention(ch.guild)
-                        await ch.send(CSStrings.TANK_REMINDER.format(assignee=assignee))
-                        self.state.data["tank"]["last_reminder_date"] = now.date().isoformat()
-                        self.state.save()
+
+            # Reminders any day: every 7 days after the 1st at the same post_time
+            tank = self.state.data["tank"]
+            if tank.get("month") and not tank.get("done"):
+                try:
+                    y_s, m_s = tank["month"].split("-")
+                    y_i, m_i = int(y_s), int(m_s)
+                    first_of_month = date(y_i, m_i, 1)
+                except Exception:
+                    first_of_month = date(now.year, now.month, 1)
+
+                base_dt = self.tz.localize(datetime.combine(first_of_month, t_post_t))
+                step = int(tank.get("reminder_step", 0))
+                target_dt = base_dt + timedelta(days=TANK_INTERVAL_DAYS * (step + 1))
+                if now >= target_dt:
+                    assignee = await self._current_tank_assignee_mention(ch.guild)
+                    await ch.send(CSStrings.TANK_REMINDER.format(assignee=assignee))
+                    self.state.data["tank"]["reminder_step"] = step + 1
+                    self.state.save()
+
         except Exception as e:
             logger.exception("maintenance_loop error: %s", e)
 
