@@ -29,4 +29,4 @@ networks:
   bot_network:
     driver: bridge
     driver_opts:
-      com.docker.network.bridge.name: stefan_bot_bridge
+      com.docker.network.bridge.name: stfn_bot_bridge
