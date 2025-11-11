@@ -23,10 +23,10 @@ services:
 
     # Network configuration for resilience
     networks:
-      - bot_network
+      - stefan_bot_network
 
 networks:
-  bot_network:
+  stefan_bot_network:
     driver: bridge
     driver_opts:
-      com.docker.network.bridge.name: bot_bridge
+      com.docker.network.bridge.name: stefan_bot_bridge
