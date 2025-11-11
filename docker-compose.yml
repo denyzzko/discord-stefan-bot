@@ -14,7 +14,6 @@ services:
 
     environment:
       - TZ=Europe/Bratislava
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
 
     # Memory limits
     mem_limit: "512m"
