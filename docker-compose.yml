@@ -1,0 +1,32 @@
+version: "3.8"
+services:
+  stefan-bot:
+    build:
+      context: .
+      dockerfile: Dockerfil
+    image: discord-stefan-bot:latest
+    container_name: discord-stefan-bot
+    restart: unless-stopped
+
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data
+
+    environment:
+      - TZ=Europe/Bratislava
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+
+    # Memory limits
+    mem_limit: "512m"
+    mem_reservation: "256m"
+    memswap_limit: "512m"
+
+    # Network configuration for resilience
+    networks:
+      - bot_network
+
+networks:
+  bot_network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: bot_bridge
