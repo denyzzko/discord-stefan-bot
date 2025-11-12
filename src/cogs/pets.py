@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, time, date
 import pytz
+import random
 
 import discord
 from discord.ext import commands, tasks
@@ -80,7 +81,7 @@ class PetsCog(commands.Cog):
                 if not channel:
                     logger.warning("Pets channel not found")
                     return
-                msg = await channel.send(CSStrings.FEED_START)
+                msg = await channel.send(random.choice(CSStrings.FEED_STARTS))
                 try:
                     await msg.add_reaction(GREEN_CHECK)
                 except Exception:
@@ -286,7 +287,8 @@ class PetsCog(commands.Cog):
         if self.state.data["feed"].get("message_id") == msg.id:
             if emoji == GREEN_CHECK and not self.state.data["feed"].get("done"):
                 self.state.mark_fed()
-                await channel.send(CSStrings.FEED_THANKS.format(mention=f"<@{payload.user_id}>"))
+                thanks = random.choice(CSStrings.FEED_THANKS)
+                await channel.send(thanks.format(mention=f"<@{payload.user_id}>"))
             return
 
         # FILTER flow
