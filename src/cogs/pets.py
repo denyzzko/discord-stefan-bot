@@ -71,12 +71,18 @@ class PetsCog(commands.Cog):
                 self.state.reset_feed_for_today(today_str)
                 self.feed_msg_id = None
 
-            # At configured feeding time: post initial reminder if not yet posted
-            feed_time_str = self.config.get_time("feeding", "12:00")
-            hh, mm = [int(x) for x in feed_time_str.split(":")]
-            target_dt = self.tz.localize(datetime.combine(today, time(hh, mm)))
+            # Feeding can be turned off via /pet-reminders-off
+            if not self.state.reminders_enabled():
+                return
 
-            if now >= target_dt and not self.state.data["feed"].get("message_id"):
+            # At configured feeding time: post initial reminder if not yet posted
+            # Default: 13:00
+            feed_time_str = self.config.get_time("feeding", "13:00")
+            hh, mm = [int(x) for x in feed_time_str.split(":")]
+            start_dt = self.tz.localize(datetime.combine(today, time(hh, mm)))
+
+            # Send the start message at start_dt
+            if now >= start_dt and not self.state.data["feed"].get("message_id") and not self.state.data["feed"].get("done"):
                 channel = await self.get_pets_channel()
                 if not channel:
                     logger.warning("Pets channel not found")
@@ -87,22 +93,23 @@ class PetsCog(commands.Cog):
                 except Exception:
                     pass
                 self.state.data["feed"]["message_id"] = msg.id
-                self.state.data["feed"]["last_reminder_hour"] = now.hour
+                self.state.data["feed"]["reminder_step"] = 0  # 0 = no reminders sent yet
                 self.state.save()
                 self.feed_msg_id = msg.id
                 return
 
-            # Hourly reminders after feeding time if not fed yet
+            # Remind every 4 hours after the start (17:00, 21:00) and then stop
+            # Two reminders max.
             if self.state.data["feed"].get("message_id") and not self.state.data["feed"].get("done"):
-                last_hr = self.state.data["feed"].get("last_reminder_hour")
-                if now.hour != last_hr and now.minute == 0 and now >= target_dt:
-                    # choose a progressively saucy line
-                    idx = min(max(0, (now.hour - target_dt.hour) - 1), len(CSStrings.FEED_REMINDERS) - 1)
-                    channel = await self.get_pets_channel()
-                    if channel:
-                        await channel.send(CSStrings.FEED_REMINDERS[idx])
-                    self.state.data["feed"]["last_reminder_hour"] = now.hour
-                    self.state.save()
+                step = int(self.state.data["feed"].get("reminder_step", 0))
+                if step < 2:
+                    target = start_dt + timedelta(hours=4 * (step + 1))
+                    if now >= target:
+                        channel = await self.get_pets_channel()
+                        if channel:
+                            await channel.send(random.choice(CSStrings.FEED_REMINDERS))
+                        self.state.data["feed"]["reminder_step"] = step + 1
+                        self.state.save()
         except Exception as e:
             logger.exception("feed_loop error: %s", e)
 
@@ -131,7 +138,7 @@ class PetsCog(commands.Cog):
 
             # Reminders any day: Wed/Fri/Sun at the same post_time
             filt = self.state.data["filter"]
-            if filt.get("week") and not filt.get("done"):
+            if self.state.reminders_enabled() and filt.get("week") and not filt.get("done"):
                 # derive Monday date of that ISO week
                 try:
                     y_s, w_s = filt["week"].split("-W")
@@ -164,7 +171,7 @@ class PetsCog(commands.Cog):
 
             # Reminders any day: every 7 days after the 1st at the same post_time
             tank = self.state.data["tank"]
-            if tank.get("month") and not tank.get("done"):
+            if self.state.reminders_enabled() and tank.get("month") and not tank.get("done"):
                 try:
                     y_s, m_s = tank["month"].split("-")
                     y_i, m_i = int(y_s), int(m_s)
@@ -297,7 +304,7 @@ class PetsCog(commands.Cog):
             idx = self.state.data["filter"].get("assignee_index", 0) % max(1, len(rotation)) if rotation else 0
             current_uid = rotation[idx] if rotation else None
 
-            if emoji == GREEN_CHECK and payload.user_id == current_uid and not self.state.data["filter"]["done"]:
+            if emoji == GREEN_CHECK and not self.state.data["filter"]["done"]:
                 self.state.mark_filter_done()
                 await channel.send(CSStrings.FILTER_DONE.format(mention=f"<@{payload.user_id}>"))
                 # move index to next for next week
@@ -330,7 +337,7 @@ class PetsCog(commands.Cog):
             idx = self.state.data["tank"].get("assignee_index", 0) % max(1, len(rotation)) if rotation else 0
             current_uid = rotation[idx] if rotation else None
 
-            if emoji == GREEN_CHECK and payload.user_id == current_uid and not self.state.data["tank"]["done"]:
+            if emoji == GREEN_CHECK and not self.state.data["tank"]["done"]:
                 self.state.mark_tank_done()
                 await channel.send(CSStrings.TANK_DONE.format(mention=f"<@{payload.user_id}>"))
                 if rotation:
@@ -384,6 +391,17 @@ class PetsCog(commands.Cog):
         embed.add_field(name="🧽 Filtr (týden)", value=CSStrings.STATUS_FILTER.format(assignee=assignee_f, done=("✅" if filter_done else "❌")), inline=False)
         embed.add_field(name="🪣 Akvárko (měsíc)", value=CSStrings.STATUS_TANK.format(assignee=assignee_t, done=("✅" if tank_done else "❌")), inline=False)
         await ctx.reply(embed=embed, ephemeral=False)
+
+    
+    @commands.hybrid_command(name="pet-reminders-off", description="Vypne připomínky (krmení úplně, úklidy jen bez připomínek).")
+    async def pet_reminders_off(self, ctx: commands.Context):
+        self.state.set_reminders_enabled(False)
+        await ctx.reply("🔕 Připomínky jsou vypnuté.")
+
+    @commands.hybrid_command(name="pet-reminders-on", description="Zapne připomínky.")
+    async def pet_reminders_on(self, ctx: commands.Context):
+        self.state.set_reminders_enabled(True)
+        await ctx.reply("🔔 Připomínky jsou zapnuté.")
 
     @commands.hybrid_command(name="pet-vacation", description="Nastaví/odstraní dovolenou uživatele v rotaci.")
     async def pet_vacation(self, ctx: commands.Context, member: discord.Member, stav: str):

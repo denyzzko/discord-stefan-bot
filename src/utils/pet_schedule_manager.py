@@ -17,10 +17,11 @@ class PetScheduleManager:
                 return json.load(f)
         except FileNotFoundError:
             return {
-                "feed":   {"date": None, "done": False, "message_id": None, "last_reminder_hour": None},
+                "feed":   {"date": None, "done": False, "message_id": None, "reminder_step": 0},
                 "filter": {"week": None, "done": False, "message_id": None, "assignee_index": 0, "last_reminder_date": None, "reminder_step": 0},
                 "tank":   {"month": None, "done": False, "message_id": None, "assignee_index": 0, "last_reminder_date": None, "reminder_step": 0},
-                "vacation": {}
+                "vacation": {},
+                "settings": {"reminders_enabled": True}
             }
         except Exception as e:
             logger.exception("Failed to load data file: %s", e)
@@ -36,8 +37,9 @@ class PetScheduleManager:
         self.data["feed"]["date"] = today_str
         self.data["feed"]["done"] = False
         self.data["feed"]["message_id"] = None
-        self.data["feed"]["last_reminder_hour"] = None
+        self.data["feed"]["reminder_step"] = 0
         self.save()
+
 
     def mark_fed(self):
         self.data["feed"]["done"] = True
@@ -93,4 +95,14 @@ class PetScheduleManager:
 
     def advance_rotation_index(self, key: str, n: int):
         self.data[key]["assignee_index"] = (self.data[key].get("assignee_index", 0) + 1) % max(1, n)
+        self.save()
+
+
+    # --- Settings ---
+    def reminders_enabled(self) -> bool:
+        return bool(self.data.get("settings", {}).get("reminders_enabled", True))
+
+    def set_reminders_enabled(self, enabled: bool):
+        self.data.setdefault("settings", {})
+        self.data["settings"]["reminders_enabled"] = bool(enabled)
         self.save()
